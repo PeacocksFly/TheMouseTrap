@@ -81,12 +81,21 @@ uint8_t test[16] __at(0x050);
 
 void main(void) {
     
-    TXSTA1 = 0b00000000;
+    //EUSART Reception Control Register Configuration
+    RCSTA1bits.SPEN = 1;        //serial port enabled
+    RCSTA1bits.RX9 = 0;         //8-bits reception
+    RCSTA1bits.CREN = 1;        //receiver enabled
+       
+    //EUSART Transmit Control Register Configuration
+    TXSTA1bits.SYNC = 0;        //asynchronous mode
+    TXSTA1bits.TX9 = 0;         //8-bits transmission
+    TXSTA1bits.TXEN = 1;        //transmitter enabled
+    TXSTA1bits.BRGH = 0;        //low speed baud rate selected 
+ 
+
     
     TRISDbits.RD1 = 0;
-    
-    test[1] = 0xAA;
-    test[2] = 0xBB;
+   
     
     while(1)
     {
@@ -100,4 +109,8 @@ void main(void) {
 }
 
 
+void __interrupt(high_priority) myIsr(void)
+{
 
+
+}
