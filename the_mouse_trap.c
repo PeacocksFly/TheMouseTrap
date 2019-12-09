@@ -91,8 +91,8 @@ void main(void) {
     TXSTA1bits.TX9 = 0;         //8-bits transmission
     TXSTA1bits.TXEN = 1;        //transmitter enabled
     TXSTA1bits.BRGH = 0;        //low speed baud rate selected 
- 
-
+    BAUDCON1bits.BRG16 = 0;     //8-bit baud rate generator
+    SPBRG1 = 0x0C;              //baud rate = 9600
     
     TRISDbits.RD1 = 0;
    
@@ -111,6 +111,9 @@ void main(void) {
 
 void __interrupt(high_priority) myIsr(void)
 {
-
-
+    if(PIR1bits.RC1IF)
+    {
+    
+    
+    }
 }
