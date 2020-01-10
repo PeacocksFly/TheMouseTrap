@@ -82,27 +82,31 @@ uint8_t test[16] __at(0x050);
 void main(void) {
     
     //EUSART Reception Control Register Configuration
-    RCSTA1bits.SPEN = 1;        //serial port enabled
-    RCSTA1bits.RX9 = 0;         //8-bits reception
-    RCSTA1bits.CREN = 1;        //receiver enabled
-       
-    //EUSART Transmit Control Register Configuration
-    TXSTA1bits.SYNC = 0;        //asynchronous mode
-    TXSTA1bits.TX9 = 0;         //8-bits transmission
-    TXSTA1bits.TXEN = 1;        //transmitter enabled
-    TXSTA1bits.BRGH = 0;        //low speed baud rate selected 
-    BAUDCON1bits.BRG16 = 0;     //8-bit baud rate generator
-    SPBRG1 = 0x0C;              //baud rate = 9600
+//    RCSTA1bits.SPEN = 1;        //serial port enabled
+//    RCSTA1bits.RX9 = 0;         //8-bits reception
+//    RCSTA1bits.CREN = 1;        //receiver enabled
+//       
+//    //EUSART Transmit Control Register Configuration
+//    TXSTA1bits.SYNC = 0;        //asynchronous mode
+//    TXSTA1bits.TX9 = 0;         //8-bits transmission
+//    TXSTA1bits.TXEN = 1;        //transmitter enabled
+//    TXSTA1bits.BRGH = 0;        //low speed baud rate selected 
+//    BAUDCON1bits.BRG16 = 0;     //8-bit baud rate generator
+//    SPBRG1 = 0x0C;              //baud rate = 9600
     
-    TRISDbits.RD1 = 0;
-   
+    TRISDbits.RD1 = 0;            //RD1 as output
+    TRISBbits.RB0 = 1;            //INT0 as input
+    ANSELBbits.ANSB0 = 0;         //digital input enabled
+    WPUBbits.WPUB0 = 0;           //weak pull-up on PORT B disabled
+    
+    INTCONbits.GIE = 1;           //general interrupt enabled
+    INTCONbits.INT0IF = 0;        //INT0 flag reset before enabling the INT0 interrupt
+    INTCONbits.INT0IE = 1;        //INT0 interrupt enabled
+    INTCON2bits.INTEDG0 = 1;      //Interrupt on rising edge enabled
+    
     
     while(1)
     {
-        LATDbits.LATD1 = 1;
-        __delay_ms(5000);
-        LATDbits.LATD1 = 0;
-        __delay_ms(1000);
     }
         
     return;
@@ -111,9 +115,11 @@ void main(void) {
 
 void __interrupt(high_priority) myIsr(void)
 {
-    if(PIR1bits.RC1IF)
+    if(INTCONbits.INT0IF)
     {
-    
-    
+        LATDbits.LATD1 = 1;
+        __delay_ms(50);
+        LATDbits.LATD1 = 0; 
+        INTCONbits.INT0IF = 0;
     }
 }
