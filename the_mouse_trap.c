@@ -82,13 +82,17 @@ void __interrupt(high_priority) myIsrHigh(void);
 void __interrupt(low_priority) myIsrLow(void);
 void stringToSIM800L(void*);
 void charToSIM800L(uint8_t);
-uint8_t resultCodeAnalysis(uint8_t code);
-//void waitingFor();
+uint8_t sendATCommand(void*, const uint8_t);
+void delay(uint8_t);
+uint8_t resultCodeAnalysis(uint8_t);
 
-uint8_t reception[50] __at(0x050);
+uint8_t RX_buffer[50] __at(0x050);
 enum result_codes{OK, CONNECT, RING, NO_CARRIER, ERROR, NO_DIALTONE, BUSY, NO_ANSWER};
-const uint8_t* start = reception;
-uint8_t* stop;
+uint8_t* head = RX_buffer;
+uint8_t* tail = &RX_buffer[49];
+uint8_t* temp;
+
+inline void ptrReset(void){temp = head;}
 
 void main(void) {
     
@@ -97,80 +101,68 @@ void main(void) {
     OSCCONbits.SCS = 0b00;
             
     //EUSART Reception Control Register Configuration
-    TRISCbits.TRISC6 = 1;       //RC6 as an output - TX
-    TRISCbits.TRISC7 = 1;       //RC7 as an input  - RX
-    ANSELCbits.ANSC6 = 0;       //digital enabled
-    ANSELCbits.ANSC7 = 0;       //digital enabled
+    TRISCbits.TRISC6 = 1;              //RC6 as an output - TX
+    TRISCbits.TRISC7 = 1;              //RC7 as an input  - RX
+    ANSELCbits.ANSC6 = 0;              //digital enabled
+    ANSELCbits.ANSC7 = 0;              //digital enabled
     
-    RCSTA1bits.SPEN = 1;        //serial port enabled
-    RCSTA1bits.RX9 = 0;         //8-bits reception
-    RCSTA1bits.CREN = 1;        //receiver enabled
+    RCSTA1bits.SPEN = 1;               //serial port enabled
+    RCSTA1bits.RX9 = 0;                //8-bits reception
+    RCSTA1bits.CREN = 1;               //receiver enabled
        
     //EUSART Transmit Control Register Configuration
-    TXSTA1bits.SYNC = 0;        //asynchronous mode
-    TXSTA1bits.TXEN = 1;        //transmitter enabled
-    TXSTA1bits.TX9 = 0;         //8-bits transmission
-    TXSTA1bits.BRGH = 0;        //low speed baud rate selected 
-    BAUDCON1bits.BRG16 = 0;     //8-bit baud rate generator
-    SPBRG1 = 12;                //baud rate = 9600
+    TXSTA1bits.SYNC = 0;               //asynchronous mode
+    TXSTA1bits.TXEN = 1;               //transmitter enabled
+    TXSTA1bits.TX9 = 0;                //8-bits transmission
+    TXSTA1bits.BRGH = 0;               //low speed baud rate selected 
+    BAUDCON1bits.BRG16 = 0;            //8-bit baud rate generator
+    SPBRG1 = 12;                       //baud rate = 9600
        
     //RB1 pin for InfraRed Sensor Configuration
-    TRISDbits.RD1 = 0;          //RD1 as output
-    LATDbits.LATD1 = 0;         //RD1 at 0
-    TRISBbits.RB1 = 1;          //INT1 as input
-    ANSELBbits.ANSB1 = 0;       //digital input enabled
-    WPUBbits.WPUB1 = 0;         //weak pull-up on PORT B disabled
+    TRISDbits.RD1 = 0;                 //RD1 as output
+    LATDbits.LATD1 = 0;                //RD1 at 0
+    TRISBbits.RB1 = 1;                 //INT1 as input
+    ANSELBbits.ANSB1 = 0;              //digital input enabled
+    WPUBbits.WPUB1 = 0;                //weak pull-up on PORT B disabled
     
     //RB0 pin used with Push-Button to reset the push-pull magnet configuration
-    TRISBbits.RB0 = 1;          //INT0 as input
-    ANSELBbits.ANSB0 = 0;       //digital input enabled
-    WPUBbits.WPUB0 = 0;         //weak pull-up on PORT B disabled
+    TRISBbits.RB0 = 1;                 //INT0 as input
+    ANSELBbits.ANSB0 = 0;              //digital input enabled
+    WPUBbits.WPUB0 = 0;                //weak pull-up on PORT B disabled
        
     __delay_ms(100);          
     
     //Interrupts configuration
-    INTCONbits.GIE = 1;         //general interrupt enabled
-    RCONbits.IPEN = 1;          //priority levels enabled
-    INTCONbits.PEIE = 1;        //peripheral interrupt enabled for UART
-    INTCON3bits.INT1IF = 0;     //INT1 flag reset before enabling the INT0 interrupt
-    INTCONbits.INT0IF = 0;      //INT0 flag reset before enabling the INT0 interrupt   
-    INTCON3bits.INT1IP = 0;     //INT1 interrupt low priority
-    INTCON2bits.INTEDG1 = 1;    //Interrupt on rising edge enabled
-    INTCON2bits.INTEDG0 = 1;    //Interrupt on rising edge enabled
-    PIE1bits.RC1IE = 1;         //RC1REG interrupt enabled
-    IPR1bits.RC1IP = 1;         //RC1 interrupt high priority
-    PIR1bits.RC1IF = 0;         //RC1 interrupt flag reset
+    INTCONbits.GIE = 1;                 //general interrupt enabled
+    RCONbits.IPEN = 1;                  //priority levels enabled
+    INTCONbits.PEIE = 1;                //peripheral interrupt enabled for UART  
+    INTCON3bits.INT1IP = 0;             //INT1 interrupt low priority
+    INTCON2bits.INTEDG1 = 1;            //Interrupt on rising edge enabled
+    INTCON2bits.INTEDG0 = 1;            //Interrupt on rising edge enabled
+    PIE1bits.RC1IE = 1;                 //RC1REG interrupt enabled
+    IPR1bits.RC1IP = 1;                 //RC1 interrupt high priority
+    PIR1bits.RC1IF = 0;                 //RC1 interrupt flag reset
 
-   // bit waiting = 1;
-    
 
-    stop = start;
-    stringToSIM800L("ATV0\r"); // possible response "0/r/n or 1/r/n"
-    __delay_ms(1000);  //default timeout
-    uint8_t result = resultCodeAnalysis(*(stop-4) & 0x01);
-    if(result != OK)
-    {
-         //LCD_message
-    }
-              
-    stop = start;
-    __delay_ms(1000); 
-    result = resultCodeAnalysis(*(stop-4) & 0x01);
-    stringToSIM800L("ATE0\r");  
+    ptrReset();                         //reset the stop pointer to start of the uart buffer
+    if(sendATCommand("ATV0\r", 100))    //AT command for less verbose answer
+         {}     //LCD message           //default timeout for commands not interacting with the network
 
-    stop = start;
-    __delay_ms(50);
-    result = resultCodeAnalysis(*(stop-4) & 0x01);
-    stringToSIM800L("AT+CMGF=1\r");  //ok or error
-      
+    ptrReset();                         
+    if(sendATCommand("ATE0\r", 100))    //AT command for echo off + default timeout for commands not interacting with the network
+         {}     //LCD message           //LCD message to inform user of error message (to be implemented)
     
-    INTCON3bits.INT1IE = 1;       //INT1 interrupt enabled
-    INTCONbits.INT0IE = 1;
-    
-    while(1)
-    {
-    }
+    ptrReset();                         
+    if(sendATCommand("AT+CMGF=1\r", 5)) //AT command for sms mode + AT+CMGF command timeout
+         {}     //LCD message           //LCD message to inform user of error message (to be implemented)
         
+    INTCON3bits.INT1IF = 0;             //INT1 flag reset before enabling the INT0 interrupt
+    INTCONbits.INT0IF = 0;              //INT0 flag reset before enabling the INT0 interrupt 
+    INTCON3bits.INT1IE = 1;             //INT1 interrupt enabled
+    INTCONbits.INT0IE = 1;              //INT0 interrupt enabled
+    
+    while(1){}
+ 
     return;
 }
 
@@ -179,7 +171,9 @@ void __interrupt(high_priority) myIsrHigh(void)
 {  
     if(PIR1bits.RC1IF)
     {
-        *stop++ = RCREG1;
+        *temp++ = RCREG1;
+        if(temp == tail)
+            temp = head;
     }
 
     if(INTCONbits.INT0IF)
@@ -201,16 +195,14 @@ void __interrupt(low_priority) myIsrLow(void)
         __delay_ms(500);
         LATDbits.LATD1 = 0; 
               
-        stop = start;
-        stringToSIM800L("AT+CMGS=\"+352621981356\"\r");
-        __delay_ms(1000);  //default timeout
-        uint8_t result = resultCodeAnalysis(*(stop-4) & 0x01);
-           
-        stop = start;
-        stringToSIM800L("Mouse caught!\x1A\r");
-        __delay_ms(1800);  //default timeout
-        result = resultCodeAnalysis(*(stop-4) & 0x01);
-        
+        ptrReset();                     //AT command to send a message + AT+CMGS command timeout
+        if(sendATCommand("AT+CMGS=\"+352621981356\"\r", 180))  
+            {}  //LCD message           //default timeout for commands not interacting with the network  
+            
+        ptrReset();                     //Message + AT+CMGS command timeout
+        if(sendATCommand("Mouse caught!\x1A\r", 5)) 
+            {}  //LCD message           //default timeout for commands not interacting with the network
+    
     }
         
 }
@@ -220,8 +212,6 @@ uint8_t resultCodeAnalysis(uint8_t code)
     switch (code)
     {
         case OK:
-               return 0;
-               break;
         case CONNECT: 
         case RING:
         case NO_CARRIER: 
@@ -233,8 +223,7 @@ uint8_t resultCodeAnalysis(uint8_t code)
             break;
         default: 
             return ERROR;
-            break;
-            
+            break;            
     }
 }
 
@@ -246,7 +235,20 @@ void stringToSIM800L(void* strg)
 
 void charToSIM800L(uint8_t chtr)
 {
-         while(!PIR1bits.TX1IF);        //wait for TX1IF to be set to send next byte      
+         while(!PIR1bits.TX1IF);        
          TXREG1 = chtr;
+}
+
+uint8_t sendATCommand(void* cmd, uint8_t timeout)
+{   
+    stringToSIM800L(cmd);    
+    delay(timeout);
+    return resultCodeAnalysis(*(temp-4) & 0x01);
+}
+
+void delay(uint8_t ms)
+{
+    for(uint8_t i = 0; i< ms; i++)
+        __delay_ms(1);
 }
 
