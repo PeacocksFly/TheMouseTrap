@@ -11,7 +11,7 @@
 // 'C' source line config statements
 
 // CONFIG1H
-#pragma config FOSC = HSMP   // Oscillator Selection bits (Internal oscillator block)
+#pragma config FOSC = HSMP      // Oscillator Selection bits (Internal oscillator block)
 #pragma config PLLCFG = OFF     // 4X PLL Enable (Oscillator used directly)
 #pragma config PRICLKEN = ON    // Primary clock enable bit (Primary clock is always enabled)
 #pragma config FCMEN = OFF      // Fail-Safe Clock Monitor Enable bit (Fail-Safe Clock Monitor disabled)
@@ -83,7 +83,7 @@ void __interrupt(low_priority) myIsrLow(void);
 void stringToSIM800L(void*);
 void charToSIM800L(uint8_t);
 uint8_t sendATCommand(void*, const uint8_t);
-void delay(uint8_t);
+void delay(uint16_t);
 uint8_t resultCodeAnalysis(uint8_t);
 
 uint8_t RX_buffer[50] __at(0x050);
@@ -130,7 +130,7 @@ void main(void) {
     ANSELBbits.ANSB0 = 0;              //digital input enabled
     WPUBbits.WPUB0 = 0;                //weak pull-up on PORT B disabled
        
-    __delay_ms(100);          
+    delay(60000);                      //delay for the infrared sensor to stabilize
     
     //Interrupts configuration
     INTCONbits.GIE = 1;                 //general interrupt enabled
@@ -142,6 +142,7 @@ void main(void) {
     PIE1bits.RC1IE = 1;                 //RC1REG interrupt enabled
     IPR1bits.RC1IP = 1;                 //RC1 interrupt high priority
     PIR1bits.RC1IF = 0;                 //RC1 interrupt flag reset
+    
 
 
     ptrReset();                         //reset the stop pointer to start of the uart buffer
@@ -155,10 +156,10 @@ void main(void) {
     ptrReset();                         
     if(sendATCommand("AT+CMGF=1\r", 5)) //AT command for sms mode + AT+CMGF command timeout
          {}     //LCD message           //LCD message to inform user of error message (to be implemented)
-        
-    INTCON3bits.INT1IF = 0;             //INT1 flag reset before enabling the INT0 interrupt
-    INTCONbits.INT0IF = 0;              //INT0 flag reset before enabling the INT0 interrupt 
+              
+    INTCON3bits.INT1IF = 0;             //INT1 reset flag
     INTCON3bits.INT1IE = 1;             //INT1 interrupt enabled
+    INTCONbits.INT0IF = 0;              //INT0 reset flag
     INTCONbits.INT0IE = 1;              //INT0 interrupt enabled
     
     while(1){}
@@ -169,17 +170,17 @@ void main(void) {
 
 void __interrupt(high_priority) myIsrHigh(void)
 {  
-    if(PIR1bits.RC1IF)
-    {
-        *temp++ = RCREG1;
-        if(temp == tail)
-            temp = head;
+    if(PIR1bits.RC1IF)                  //highest interrupt on RX pin to allow to 
+    {                                   //interrupt the low interrupt on pin T1 when sending AT commands
+        *temp++ = RCREG1;               //store the received byte
+        if(temp == tail)                //circular buffer
+          temp = head;
     }
 
-    if(INTCONbits.INT0IF)
-    {
-        INTCON3bits.INT1IF = 0;
-        INTCON3bits.INT1IE = 1;
+    if(INTCONbits.INT0IF)               //push-button that enables to manually reset the trap
+    {                                   //after catching something
+        INTCON3bits.INT1IF = 0;         
+        INTCON3bits.INT1IE = 1;         //re-enable INT1 pin
         INTCONbits.INT0IF = 0;
     }
 }
@@ -187,11 +188,13 @@ void __interrupt(high_priority) myIsrHigh(void)
 
 void __interrupt(low_priority) myIsrLow(void)
 {
-    if(INTCON3bits.INT1IF)
+    if(INTCON3bits.INT1IF)              //INT1 pin sensing a signal coming from the infrared sensor
     {
-        INTCON3bits.INT1IE = 0;
+        INTCON3bits.INT1IE = 0;         //interrupt disabled so that the caught animal does not continuously
+                                        //trigger the door and send messages...a push-button enables to manually
+                                        //re-trigger the system
         
-        LATDbits.LATD1 = 1;
+        LATDbits.LATD1 = 1;             //trigger the door during 0.5s
         __delay_ms(500);
         LATDbits.LATD1 = 0; 
               
@@ -200,9 +203,8 @@ void __interrupt(low_priority) myIsrLow(void)
             {}  //LCD message           //default timeout for commands not interacting with the network  
             
         ptrReset();                     //Message + AT+CMGS command timeout
-        if(sendATCommand("Mouse caught!\x1A\r", 5)) 
-            {}  //LCD message           //default timeout for commands not interacting with the network
-    
+        if(sendATCommand("Mouse caught!\x1A\r", 100)) 
+            {}  //LCD message           //default timeout for commands not interacting with the network  
     }
         
 }
@@ -246,9 +248,9 @@ uint8_t sendATCommand(void* cmd, uint8_t timeout)
     return resultCodeAnalysis(*(temp-4) & 0x01);
 }
 
-void delay(uint8_t ms)
+void delay(uint16_t ms)
 {
-    for(uint8_t i = 0; i< ms; i++)
+    for(uint16_t i = 0; i< ms; i++)
         __delay_ms(1);
 }
 
